@@ -118,8 +118,8 @@ export default function SignalLanding() {
 
     function paintRest(c: CanvasRenderingContext2D, p: Particle, x: number, y: number) {
       c.fillStyle = p.red
-        ? "rgba(220, 60, 60, 0.55)"
-        : "rgba(220, 220, 230, 0.32)";
+        ? "rgba(200, 30, 30, 0.55)"
+        : "rgba(30, 30, 40, 0.32)";
       c.fillText(p.ch, x, y);
     }
 
@@ -358,8 +358,8 @@ export default function SignalLanding() {
         if (!awake[i]) continue;
         const p = particles[i];
         ctx.fillStyle = p.red
-          ? "rgba(220, 60, 60, 0.55)"
-          : "rgba(220, 220, 230, 0.32)";
+          ? "rgba(200, 30, 30, 0.55)"
+          : "rgba(30, 30, 40, 0.32)";
         ctx.fillText(p.ch, p.x, p.y);
       }
 
@@ -388,7 +388,7 @@ export default function SignalLanding() {
   }, []);
 
   return (
-    <div className="relative h-svh w-screen overflow-hidden bg-[#0a0a0c] text-white select-none">
+    <div className="relative h-svh w-screen overflow-hidden bg-white text-black select-none">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
@@ -398,8 +398,8 @@ export default function SignalLanding() {
           className="text-center font-serif italic tracking-tight"
           style={{
             fontSize: "clamp(40px, 7vw, 96px)",
-            color: "rgba(255,255,255,0.96)",
-            textShadow: "0 0 28px rgba(0,0,0,0.8), 0 0 80px rgba(0,0,0,0.6)",
+            color: "rgba(0,0,0,0.96)",
+            textShadow: "0 0 28px rgba(255,255,255,0.8), 0 0 80px rgba(255,255,255,0.6)",
             mixBlendMode: "normal",
           }}
         >
@@ -408,8 +408,8 @@ export default function SignalLanding() {
         <p
           className="mt-5 max-w-[560px] text-center text-[15px] leading-relaxed"
           style={{
-            color: "rgba(255,255,255,0.62)",
-            textShadow: "0 0 20px rgba(0,0,0,0.85), 0 0 60px rgba(0,0,0,0.6)",
+            color: "rgba(0,0,0,0.62)",
+            textShadow: "0 0 20px rgba(255,255,255,0.85), 0 0 60px rgba(255,255,255,0.6)",
           }}
         >
           The product signals layer for teams drowning in conversations,
@@ -421,13 +421,13 @@ export default function SignalLanding() {
           className="pointer-events-auto mt-10 flex w-full max-w-[420px] flex-col items-center gap-2.5"
         >
           <div
-            className="flex w-full items-center gap-1 rounded-full border bg-white/4 p-1 backdrop-blur-md transition-colors focus-within:border-white/35"
+            className="flex w-full items-center gap-1 rounded-full border bg-black/4 p-1 backdrop-blur-md transition-colors focus-within:border-black/35"
             style={{
               borderColor:
                 status === "error"
                   ? "rgba(220,80,80,0.55)"
-                  : "rgba(255,255,255,0.18)",
-              boxShadow: "0 8px 32px -12px rgba(0,0,0,0.6)",
+                  : "rgba(0,0,0,0.18)",
+              boxShadow: "0 8px 32px -12px rgba(0,0,0,0.15)",
             }}
           >
             <input
@@ -441,12 +441,12 @@ export default function SignalLanding() {
                 if (status === "error") setStatus("idle");
               }}
               disabled={status === "loading" || status === "success"}
-              className="h-9 min-w-0 flex-1 bg-transparent px-4 text-[14px] text-white outline-none placeholder:text-white/35 disabled:opacity-60"
+              className="h-9 min-w-0 flex-1 bg-transparent px-4 text-[14px] text-black outline-none placeholder:text-black/35 disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={status === "loading" || status === "success"}
-              className="h-9 shrink-0 rounded-full bg-white px-4 text-[13px] font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {status === "loading"
                 ? "Joining…"
@@ -462,8 +462,8 @@ export default function SignalLanding() {
                 status === "error"
                   ? "rgba(220,120,120,0.85)"
                   : status === "success"
-                    ? "rgba(180,230,180,0.75)"
-                    : "rgba(255,255,255,0.35)",
+                    ? "rgba(30,140,30,0.85)"
+                    : "rgba(0,0,0,0.35)",
             }}
           >
             {status === "error"
