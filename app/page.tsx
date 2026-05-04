@@ -1,56 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  prepareWithSegments,
-  layoutWithLines,
-} from "@chenglou/pretext";
 
-const CHARSET =
+const CHARS =
   "[](){}<>/\\|*+-=#$%&@^~?!:;,.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const rc = () => CHARS[(Math.random() * CHARS.length) | 0];
 
-function randChar() {
-  return CHARSET[(Math.random() * CHARSET.length) | 0];
-}
-
-function randToken() {
-  const n = 2 + ((Math.random() * 7) | 0);
-  let s = "";
-  for (let i = 0; i < n; i++) s += randChar();
-  return s;
-}
-
-function buildCorpus(length: number) {
-  const out: string[] = [];
-  for (let i = 0; i < length; i++) out.push(randToken());
-  return out.join(" ");
-}
-
-type Particle = {
+type RadarChar = {
   ch: string;
-  rx: number;
-  ry: number;
   x: number;
   y: number;
-  px: number;
-  py: number;
-  vx: number;
-  vy: number;
-  w: number;
-  cellIdx: number;
-  red: boolean;
-};
-
-type Stroke = {
-  x: number;
-  y: number;
-  age: number;
-  life: number;
+  angle: number;
+  dist: number;
+  glow: number;
+  size: number;
+  signal: boolean;
 };
 
 type WaitlistStatus = "idle" | "loading" | "success" | "error";
 
-export default function SignalLanding() {
+const SIGNAL_WORDS = [
+  "signal", "noise", "data", "found", "locked",
+  "detect", "decode", "source", "target",
+];
+
+export default function HomeLanding() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<WaitlistStatus>("idle");
@@ -65,7 +39,7 @@ export default function SignalLanding() {
       const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, source: "signal" }),
+        body: JSON.stringify({ email, source: "home" }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -86,331 +60,227 @@ export default function SignalLanding() {
   }
 
   useEffect(() => {
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
-    const ctxNullable = canvasEl.getContext("2d");
-    if (!ctxNullable) return;
-    const canvas: HTMLCanvasElement = canvasEl;
-    const ctx: CanvasRenderingContext2D = ctxNullable;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
     const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-
-    const FONT_SIZE = 14;
-    const LINE_HEIGHT = 18;
-    const FONT = `${FONT_SIZE}px ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace`;
-
-    let particles: Particle[] = [];
+    let chars: RadarChar[] = [];
     let width = 0;
     let height = 0;
     let raf = 0;
-
-    const strokes: Stroke[] = [];
-    let pressing = false;
-    let lastDrawAt = { x: 0, y: 0, t: 0 };
-
-    const CELL = 80;
-    let cols = 0;
-    let rows = 0;
-    let grid: number[][] = [];
-    let awake = new Uint8Array(0);
-    let offscreen: HTMLCanvasElement | null = null;
-    let offCtx: CanvasRenderingContext2D | null = null;
-
-    function paintRest(c: CanvasRenderingContext2D, p: Particle, x: number, y: number) {
-      c.fillStyle = p.red
-        ? "rgba(200, 30, 30, 0.55)"
-        : "rgba(30, 30, 40, 0.32)";
-      c.fillText(p.ch, x, y);
-    }
-
-    function eraseAt(c: CanvasRenderingContext2D, p: Particle, x: number, y: number) {
-      c.clearRect(x - 1, y - 1, p.w + 2, LINE_HEIGHT);
-    }
-
-    function cellOf(x: number, y: number) {
-      const cx = Math.min(cols - 1, Math.max(0, Math.floor(x / CELL)));
-      const cy = Math.min(rows - 1, Math.max(0, Math.floor(y / CELL)));
-      return cy * cols + cx;
-    }
-
-    function build() {
-      width = canvas.clientWidth;
-      height = canvas.clientHeight;
-
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.font = FONT;
-      ctx.textBaseline = "top";
-
-      const targetLines = Math.ceil(height / LINE_HEIGHT) + 2;
-      const charsPerLine = Math.ceil(width / (FONT_SIZE * 0.55));
-      const corpus = buildCorpus(targetLines * Math.ceil(charsPerLine / 4));
-
-      const prepared = prepareWithSegments(corpus, FONT);
-      const { lines } = layoutWithLines(prepared, width, LINE_HEIGHT);
-
-      const next: Particle[] = [];
-      const visibleLines = Math.min(lines.length, targetLines);
-
-      for (let li = 0; li < visibleLines; li++) {
-        const line = lines[li];
-        const y = li * LINE_HEIGHT;
-        let x = 0;
-        for (const ch of line.text) {
-          if (ch === " ") {
-            x += ctx.measureText(" ").width;
-            continue;
-          }
-          const w = ctx.measureText(ch).width;
-          if (x > width) break;
-          next.push({
-            ch,
-            rx: x,
-            ry: y,
-            x,
-            y,
-            px: x,
-            py: y,
-            vx: 0,
-            vy: 0,
-            w,
-            cellIdx: 0,
-            red: Math.random() < 0.06,
-          });
-          x += w;
-        }
-      }
-      particles = next;
-
-      cols = Math.max(1, Math.ceil(width / CELL));
-      rows = Math.max(1, Math.ceil(height / CELL));
-      grid = Array.from({ length: cols * rows }, () => [] as number[]);
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i];
-        const idx = cellOf(p.rx, p.ry);
-        p.cellIdx = idx;
-        grid[idx].push(i);
-      }
-      awake = new Uint8Array(particles.length);
-
-      const off = document.createElement("canvas");
-      off.width = Math.floor(width * dpr);
-      off.height = Math.floor(height * dpr);
-      const c = off.getContext("2d");
-      offCtx = c;
-      if (c) {
-        c.setTransform(dpr, 0, 0, dpr, 0, 0);
-        c.font = FONT;
-        c.textBaseline = "top";
-        for (const p of particles) paintRest(c, p, p.rx, p.ry);
-      }
-      offscreen = off;
-    }
-
-    function addStroke(x: number, y: number) {
-      const now = performance.now();
-      const dx = x - lastDrawAt.x;
-      const dy = y - lastDrawAt.y;
-      const d = Math.hypot(dx, dy);
-      const dt = now - lastDrawAt.t;
-      if (lastDrawAt.t !== 0 && d > 4) {
-        const steps = Math.min(20, Math.ceil(d / 4));
-        for (let i = 1; i <= steps; i++) {
-          strokes.push({
-            x: lastDrawAt.x + (dx * i) / steps,
-            y: lastDrawAt.y + (dy * i) / steps,
-            age: 0,
-            life: 1500,
-          });
-        }
-      } else if (lastDrawAt.t === 0 || dt > 30) {
-        strokes.push({ x, y, age: 0, life: 1500 });
-      }
-      lastDrawAt = { x, y, t: now };
-    }
-
-    function getPos(e: PointerEvent) {
-      const r = canvas.getBoundingClientRect();
-      return { x: e.clientX - r.left, y: e.clientY - r.top };
-    }
-
-    function onDown(e: PointerEvent) {
-      pressing = true;
-      canvas.setPointerCapture(e.pointerId);
-      const { x, y } = getPos(e);
-      lastDrawAt = { x: 0, y: 0, t: 0 };
-      addStroke(x, y);
-    }
-    function onMove(e: PointerEvent) {
-      if (!pressing) return;
-      const { x, y } = getPos(e);
-      addStroke(x, y);
-    }
-    function onUp(e: PointerEvent) {
-      pressing = false;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch {}
-      lastDrawAt = { x: 0, y: 0, t: 0 };
-    }
-
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
-    canvas.addEventListener("pointerleave", onUp);
-
     let last = performance.now();
-    const RADIUS = 60;
-    const RADIUS_SQ = RADIUS * RADIUS;
-    const PUSH = 1.3;
+    let sweepAngle = 0;
+
+    const SWEEP_SPEED = 0.65;
+    const TRAIL_WIDTH = Math.PI / 5;
+    const BASE_GLOW = 0.06;
+    const GLOW_DECAY = 0.00045;
+
+    function buildChars(w: number, h: number) {
+      const cx = w / 2;
+      const cy = h / 2;
+      const minDist = 170;
+      const density = Math.floor((w * h) / 7500);
+      const next: RadarChar[] = [];
+
+      for (let i = 0; i < density; i++) {
+        let x: number, y: number, dist: number;
+        let tries = 0;
+        do {
+          x = Math.random() * w;
+          y = Math.random() * h;
+          dist = Math.hypot(x - cx, y - cy);
+          tries++;
+        } while (dist < minDist && tries < 20);
+        if (dist < minDist) continue;
+        next.push({
+          ch: rc(),
+          x, y,
+          angle: Math.atan2(y - cy, x - cx),
+          dist,
+          glow: BASE_GLOW,
+          size: 11 + ((Math.random() * 4) | 0),
+          signal: false,
+        });
+      }
+
+      const wordCount = 3 + ((Math.random() * 4) | 0);
+      for (let w2 = 0; w2 < wordCount; w2++) {
+        const word = SIGNAL_WORDS[(Math.random() * SIGNAL_WORDS.length) | 0];
+        let sx: number, sy: number, sdist: number;
+        let tries = 0;
+        do {
+          sx = minDist + Math.random() * (w - minDist * 2);
+          sy = minDist + Math.random() * (h - minDist * 2);
+          sdist = Math.hypot(sx - cx, sy - cy);
+          tries++;
+        } while (sdist < minDist && tries < 30);
+        if (sdist < minDist) continue;
+        const charW = 8;
+        for (let j = 0; j < word.length; j++) {
+          next.push({
+            ch: word[j],
+            x: sx + j * charW,
+            y: sy,
+            angle: Math.atan2(sy - cy, sx + j * charW - cx),
+            dist: Math.hypot(sx + j * charW - cx, sy - cy),
+            glow: BASE_GLOW,
+            size: 13,
+            signal: true,
+          });
+        }
+      }
+
+      return next;
+    }
+
+    function resize() {
+      width = canvas!.clientWidth;
+      height = canvas!.clientHeight;
+      canvas!.width = Math.floor(width * dpr);
+      canvas!.height = Math.floor(height * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      chars = buildChars(width, height);
+    }
 
     function frame() {
       const now = performance.now();
       const dt = Math.min(40, now - last);
       last = now;
 
-      for (let i = strokes.length - 1; i >= 0; i--) {
-        strokes[i].age += dt;
-        if (strokes[i].age >= strokes[i].life) strokes.splice(i, 1);
+      sweepAngle = (sweepAngle + SWEEP_SPEED * (dt / 1000)) % (Math.PI * 2);
+
+      const cx = width / 2;
+      const cy = height / 2;
+      const maxR = Math.hypot(cx, cy);
+
+      ctx!.clearRect(0, 0, width, height);
+
+      // range rings
+      ctx!.strokeStyle = "rgba(0,0,0,0.08)";
+      ctx!.lineWidth = 1;
+      for (const r of [0.28, 0.55, 0.82]) {
+        ctx!.beginPath();
+        ctx!.arc(cx, cy, maxR * r, 0, Math.PI * 2);
+        ctx!.stroke();
       }
 
-      ctx.clearRect(0, 0, width, height);
-      if (offscreen) ctx.drawImage(offscreen, 0, 0, width, height);
-      ctx.font = FONT;
-      ctx.textBaseline = "top";
+      // crosshair
+      ctx!.strokeStyle = "rgba(0,0,0,0.14)";
+      ctx!.lineWidth = 0.5;
+      ctx!.beginPath();
+      ctx!.moveTo(cx - 12, cy);
+      ctx!.lineTo(cx + 12, cy);
+      ctx!.moveTo(cx, cy - 12);
+      ctx!.lineTo(cx, cy + 12);
+      ctx!.stroke();
 
-      for (let s = 0; s < strokes.length; s++) {
-        const st = strokes[s];
-        const minCX = Math.max(0, Math.floor((st.x - RADIUS) / CELL));
-        const maxCX = Math.min(cols - 1, Math.floor((st.x + RADIUS) / CELL));
-        const minCY = Math.max(0, Math.floor((st.y - RADIUS) / CELL));
-        const maxCY = Math.min(rows - 1, Math.floor((st.y + RADIUS) / CELL));
-        for (let cy = minCY; cy <= maxCY; cy++) {
-          for (let cx = minCX; cx <= maxCX; cx++) {
-            const cell = grid[cy * cols + cx];
-            for (let k = 0; k < cell.length; k++) {
-              const idx = cell[k];
-              if (awake[idx] === 0) {
-                awake[idx] = 1;
-                const p = particles[idx];
-                if (offCtx) eraseAt(offCtx, p, p.px, p.py);
-              }
-            }
-          }
+      // sweep trail wedge
+      ctx!.save();
+      ctx!.beginPath();
+      ctx!.moveTo(cx, cy);
+      ctx!.arc(cx, cy, maxR, sweepAngle - TRAIL_WIDTH, sweepAngle);
+      ctx!.closePath();
+      ctx!.fillStyle = "rgba(0,0,0,0.04)";
+      ctx!.fill();
+      ctx!.restore();
+
+      // sweep arm
+      const grad = ctx!.createLinearGradient(
+        cx, cy,
+        cx + Math.cos(sweepAngle) * maxR,
+        cy + Math.sin(sweepAngle) * maxR,
+      );
+      grad.addColorStop(0, "rgba(20,20,30,0.85)");
+      grad.addColorStop(0.55, "rgba(20,20,30,0.3)");
+      grad.addColorStop(1, "rgba(20,20,30,0.02)");
+      ctx!.beginPath();
+      ctx!.moveTo(cx, cy);
+      ctx!.lineTo(
+        cx + Math.cos(sweepAngle) * maxR,
+        cy + Math.sin(sweepAngle) * maxR,
+      );
+      ctx!.strokeStyle = grad;
+      ctx!.lineWidth = 1.5;
+      ctx!.stroke();
+
+      // center dot
+      const cDot = ctx!.createRadialGradient(cx, cy, 0, cx, cy, 5);
+      cDot.addColorStop(0, "rgba(20,20,30,0.85)");
+      cDot.addColorStop(1, "rgba(20,20,30,0)");
+      ctx!.fillStyle = cDot;
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx!.fill();
+
+      // chars
+      ctx!.textBaseline = "middle";
+
+      for (const c of chars) {
+        const behind =
+          ((sweepAngle - c.angle) % (Math.PI * 2) + Math.PI * 2) %
+          (Math.PI * 2);
+
+        let targetGlow: number;
+        if (behind < TRAIL_WIDTH) {
+          targetGlow = BASE_GLOW + (1 - BASE_GLOW) * (1 - behind / TRAIL_WIDTH);
+        } else {
+          targetGlow = BASE_GLOW;
         }
-      }
 
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i];
-        if (!awake[i]) continue;
-
-        let fx = 0;
-        let fy = 0;
-
-        for (let s = 0; s < strokes.length; s++) {
-          const st = strokes[s];
-          const ddx = p.x - st.x;
-          const ddy = p.y - st.y;
-          const d2 = ddx * ddx + ddy * ddy;
-          if (d2 < RADIUS_SQ && d2 > 0.01) {
-            const d = Math.sqrt(d2);
-            const lifeRatio = 1 - st.age / st.life;
-            const falloff = (1 - d / RADIUS) * lifeRatio;
-            fx += (ddx / d) * falloff * PUSH;
-            fy += (ddy / d) * falloff * PUSH;
-          }
+        if (targetGlow > c.glow) {
+          c.glow = targetGlow;
+        } else {
+          c.glow = Math.max(BASE_GLOW, c.glow - GLOW_DECAY * dt);
         }
 
-        const sx = (p.rx - p.x) * 0.022;
-        const sy = (p.ry - p.y) * 0.022;
+        ctx!.globalAlpha = c.glow;
+        ctx!.font = `${c.size}px ui-monospace, "JetBrains Mono", Menlo, monospace`;
 
-        p.vx = (p.vx + fx + sx) * 0.78;
-        p.vy = (p.vy + fy + sy) * 0.78;
-
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (
-          Math.abs(p.x - p.rx) < 0.3 &&
-          Math.abs(p.y - p.ry) < 0.3 &&
-          Math.abs(p.vx) < 0.05 &&
-          Math.abs(p.vy) < 0.05
-        ) {
-          p.x = p.rx;
-          p.y = p.ry;
-          p.vx = 0;
-          p.vy = 0;
-          awake[i] = 0;
-          p.px = p.rx;
-          p.py = p.ry;
-          if (offCtx) paintRest(offCtx, p, p.rx, p.ry);
+        // signal words flash crimson at peak glow, noise stays dark
+        if (c.signal && c.glow > 0.45) {
+          ctx!.fillStyle = "rgba(200,40,30,1)";
+        } else {
+          ctx!.fillStyle = "rgba(20,20,30,1)";
         }
+        ctx!.fillText(c.ch, c.x, c.y);
       }
 
-      for (let i = 0; i < particles.length; i++) {
-        if (!awake[i]) continue;
-        const p = particles[i];
-        ctx.clearRect(p.x - 1, p.y - 1, p.w + 2, LINE_HEIGHT);
-      }
-      for (let i = 0; i < particles.length; i++) {
-        if (!awake[i]) continue;
-        const p = particles[i];
-        ctx.fillStyle = p.red
-          ? "rgba(200, 30, 30, 0.55)"
-          : "rgba(30, 30, 40, 0.32)";
-        ctx.fillText(p.ch, p.x, p.y);
-      }
-
+      ctx!.globalAlpha = 1;
       raf = requestAnimationFrame(frame);
     }
 
-    build();
+    resize();
+    window.addEventListener("resize", resize);
     raf = requestAnimationFrame(frame);
-
-    let resizeTimer = 0 as unknown as number;
-    const onResize = () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(build, 120) as unknown as number;
-    };
-    window.addEventListener("resize", onResize);
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
-      canvas.removeEventListener("pointerleave", onUp);
+      window.removeEventListener("resize", resize);
     };
   }, []);
 
   return (
-    <div className="relative h-svh w-screen overflow-hidden bg-white text-black select-none">
+    <div className="relative h-svh w-screen overflow-hidden bg-white select-none">
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+        className="absolute inset-0 h-full w-full"
       />
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6">
         <h1
           className="text-center font-serif italic tracking-tight"
           style={{
             fontSize: "clamp(40px, 7vw, 96px)",
-            color: "rgba(0,0,0,0.96)",
-            textShadow: "0 0 28px rgba(255,255,255,0.8), 0 0 80px rgba(255,255,255,0.6)",
-            mixBlendMode: "normal",
+            color: "rgba(0,0,0,0.88)",
           }}
         >
           Find signal from noise
         </h1>
         <p
           className="mt-5 max-w-[560px] text-center text-[15px] leading-relaxed"
-          style={{
-            color: "rgba(0,0,0,0.62)",
-            textShadow: "0 0 20px rgba(255,255,255,0.85), 0 0 60px rgba(255,255,255,0.6)",
-          }}
+          style={{ color: "rgba(0,0,0,0.5)" }}
         >
           The product signals layer for teams drowning in conversations,
           replays, and tickets.
@@ -421,13 +291,13 @@ export default function SignalLanding() {
           className="pointer-events-auto mt-10 flex w-full max-w-[420px] flex-col items-center gap-2.5"
         >
           <div
-            className="flex w-full items-center gap-1 rounded-full border bg-black/4 p-1 backdrop-blur-md transition-colors focus-within:border-black/35"
+            className="flex w-full items-center gap-1 rounded-full border bg-white/90 p-1 backdrop-blur-sm transition-colors"
             style={{
               borderColor:
                 status === "error"
                   ? "rgba(220,80,80,0.55)"
-                  : "rgba(0,0,0,0.18)",
-              boxShadow: "0 8px 32px -12px rgba(0,0,0,0.15)",
+                  : "rgba(0,0,0,0.13)",
+              boxShadow: "0 4px 24px -8px rgba(0,0,0,0.08)",
             }}
           >
             <input
@@ -441,12 +311,12 @@ export default function SignalLanding() {
                 if (status === "error") setStatus("idle");
               }}
               disabled={status === "loading" || status === "success"}
-              className="h-9 min-w-0 flex-1 bg-transparent px-4 text-[14px] text-black outline-none placeholder:text-black/35 disabled:opacity-60"
+              className="h-9 min-w-0 flex-1 bg-transparent px-4 text-[14px] text-black outline-none placeholder:text-black/30 disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={status === "loading" || status === "success"}
-              className="h-9 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {status === "loading"
                 ? "Joining…"
@@ -460,10 +330,10 @@ export default function SignalLanding() {
             style={{
               color:
                 status === "error"
-                  ? "rgba(220,120,120,0.85)"
+                  ? "rgba(220,80,80,0.85)"
                   : status === "success"
                     ? "rgba(30,140,30,0.85)"
-                    : "rgba(0,0,0,0.35)",
+                    : "rgba(0,0,0,0.3)",
             }}
           >
             {status === "error"
